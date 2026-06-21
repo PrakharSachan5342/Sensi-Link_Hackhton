@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.SenseLink" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/sense_bg</item>
+        <item name="android:statusBarColor">@color/sense_bg</item>
+        <item name="android:navigationBarColor">@color/sense_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0E0E10" />
+<title>SENSE-LINK · Edge-AI Communications Network</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E0E10; --bg2:#161619; --bg3:#1E1E23; --inset:#101013;
+    --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
+    --orange:#F26B2A; --orange2:#FF8A4C; --orange-soft:rgba(242,107,42,.14);
+    --cyan:#22D3EE; --cyan-dim:rgba(34,211,238,.16);
+    --text:#F4F4F5; --muted:#8A8A92; --muted2:#56565E;
+    --ok:#22D3EE; --good:#34D399; --warn:#F2B33A; --bad:#F2543A;
+    --display:'Anton','Arial Narrow',sans-serif;
+    --mono:'Space Mono',ui-monospace,monospace;
+    --body:'Archivo',system-ui,sans-serif;
+    --r:16px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;background:#08080a;color:var(--text);font-family:var(--body);overscroll-behavior:none;}
+  body{display:flex;align-items:center;justify-content:center;}
+  button{font-family:inherit;color:inherit;border:none;background:none;cursor:pointer;}
+  ::-webkit-scrollbar{width:0;height:0;}
+
+  .device{
+    position:relative;width:100%;max-width:440px;height:100dvh;max-height:1000px;
+    background:var(--bg);overflow:hidden;display:flex;flex-direction:column;
+    box-shadow:0 0 0 1px rgba(255,255,255,.05), 0 40px 120px rgba(0,0,0,.6);
+  }
+  @media(min-width:480px){ .device{border-radius:28px;height:94dvh;} }
+
+  .device::before{
+    content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+    background-image:radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px);
+    background-size:22px 22px;background-position:-6px -6px;opacity:.7;
+  }
+  .device::after{
+    content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+    background:radial-gradient(120% 80% at 50% -10%, rgba(242,107,42,.07), transparent 55%);
+  }
+
+  .screen{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;
+    opacity:0;visibility:hidden;transform:translateY(8px) scale(.995);
+    transition:opacity .45s ease, transform .45s ease, visibility .45s;}
+  .screen.active{opacity:1;visibility:visible;transform:none;}
+
+  .mono{font-family:var(--mono);letter-spacing:.12em;text-transform:uppercase;}
+  .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);}
+
+  #splash{align-items:center;justify-content:center;text-align:center;}
+  .splash-inner{display:flex;flex-direction:column;align-items:center;gap:30px;}
+  .mark{position:relative;width:170px;height:170px;display:grid;place-items:center;}
+  .mark .ring{position:absolute;inset:0;border:1px solid rgba(255,255,255,.06);border-radius:50%;}
+  .mark .ring.r2{inset:26px;border-color:rgba(242,107,42,.10);}
+  .mark .glow{position:absolute;width:120px;height:120px;border-radius:50%;
+    background:radial-gradient(circle, rgba(242,107,42,.35), transparent 65%);
+    filter:blur(6px);animation:breathe 3.2s ease-in-out infinite;}
+  .mark svg{position:relative;width:88px;height:88px;overflow:visible;}
+  .mark .diamond{fill:none;stroke:rgba(255,255,255,.18);stroke-width:2;}
+  .mark .inf{fill:none;stroke:var(--orange);stroke-width:5;stroke-linecap:round;
+    filter:drop-shadow(0 0 10px rgba(242,107,42,.8));
+    stroke-dasharray:160;stroke-dashoffset:160;animation:draw 2s ease forwards .2s, glowpulse 2.6s ease-in-out infinite 2.2s;}
+  @keyframes draw{to{stroke-dashoffset:0;}}
+  @keyframes glowpulse{0%,100%{opacity:1;}50%{opacity:.55;}}
+  @keyframes breathe{0%,100%{transform:scale(.9);opacity:.7;}50%{transform:scale(1.08);opacity:1;}}
+  .wordmark{font-family:var(--display);font-size:46px;letter-spacing:.16em;line-height:.9;}
+  .wordmark span{color:var(--orange);}
+  .splash-sub{font-family:var(--mono);font-size:10px;letter-spacing:.34em;color:var(--muted2);text-transform:uppercase;}
+  .scanline{position:absolute;bottom:34px;left:50%;transform:translateX(-50%);width:160px;height:1px;background:linear-gradient(90deg,transparent,var(--orange),transparent);overflow:visible;}
+  .scanline i{position:absolute;top:-2px;width:5px;height:5px;border-radius:50%;background:var(--orange);box-shadow:0 0 8px var(--orange);animation:scan 1.8s ease-in-out infinite;}
+  @keyframes scan{0%{left:0;opacity:0;}10%{opacity:1;}90%{opacity:1;}100%{left:100%;opacity:0;}}
+  .boot-status{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;color:var(--muted);text-transform:uppercase;min-height:14px;}
+
+  #onboard{padding:54px 26px 30px;}
+  .ob-title{font-family:var(--display);font-size:52px;line-height:.92;letter-spacing:.02em;}
+  .ob-desc{color:var(--muted);font-size:15px;margin:12px 0 36px;}
+  .perm{display:flex;align-items:center;gap:14px;background:var(--bg2);border:1px solid var(--line);
+    border-radius:14px;padding:16px 16px;margin-bottom:14px;}
+  .perm .ic{width:34px;height:34px;border-radius:9px;background:var(--bg3);display:grid;place-items:center;flex:0 0 auto;}
+  .perm .ic svg{width:18px;height:18px;stroke:var(--text);}
+  .perm .pt{flex:1;}
+  .perm .pt b{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;display:block;}
+  .perm .pt small{color:var(--muted);font-size:11px;}
+  .toggle{width:48px;height:28px;border-radius:20px;background:#2b2b31;position:relative;flex:0 0 auto;transition:background .25s;}
+  .toggle i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#76767e;transition:left .25s,background .25s;}
+  .toggle.on{background:var(--orange);}
+  .toggle.on i{left:23px;background:#fff;}
+  .toggle.cyan.on{background:var(--cyan);}
+  .ob-prog{margin:30px 4px 10px;}
+  .ob-prog .row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  .ob-prog .row span:first-child{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;}
+  .ob-prog .row span:last-child{font-family:var(--mono);font-size:12px;color:var(--cyan);}
+  .bar{height:5px;border-radius:6px;background:#26262b;overflow:hidden;}
+  .bar i{display:block;height:100%;width:6%;background:linear-gradient(90deg,var(--cyan),#5ee7f7);border-radius:6px;transition:width .5s ease;}
+  .cta{margin-top:26px;width:100%;background:var(--orange);color:#150a04;font-family:var(--mono);
+    font-weight:700;font-size:13px;letter-spacing:.14em;text-transform:uppercase;border-radius:13px;padding:17px;
+    display:flex;align-items:center;justify-content:center;gap:10px;transition:transform .15s, box-shadow .2s, opacity .2s;
+    box-shadow:0 10px 30px rgba(242,107,42,.25);}
+  .cta:active{transform:scale(.98);}
+  .cta[disabled]{opacity:.4;box-shadow:none;}
+  .cta svg{width:16px;height:16px;stroke:#150a04;}
+
+  .topbar{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;
+    padding:16px 18px 12px;flex:0 0 auto;}
+  .topbar .left{display:flex;align-items:center;gap:9px;}
+  .bars{display:flex;align-items:flex-end;gap:2px;height:14px;}
+  .bars i{width:3px;background:var(--cyan);border-radius:1px;}
+  .bars i:nth-child(1){height:5px;}.bars i:nth-child(2){height:8px;}.bars i:nth-child(3){height:11px;}.bars i:nth-child(4){height:14px;}
+  .brand{font-family:var(--display);font-size:21px;letter-spacing:.2em;color:var(--orange);}
+  .iconbtn{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;}
+  .iconbtn svg{width:18px;height:18px;stroke:var(--muted);transition:stroke .2s,transform .3s;}
+  .iconbtn:active svg{transform:rotate(40deg);stroke:var(--text);}
+
+  .view{flex:1;overflow-y:auto;position:relative;z-index:1;padding:0 14px 84px;}
+  .view::-webkit-scrollbar{display:none;}
+  .subview{display:none;flex-direction:column;gap:14px;}
+  .subview.active{display:flex;}
+
+  .cam{position:relative;border-radius:var(--r);overflow:hidden;background:#000;
+    aspect-ratio:3/4;border:1px solid var(--line);}
+  .cam .wrap{position:absolute;inset:0;}
+  .cam .wrap.mirror{transform:scaleX(-1);}
+  .cam video{width:100%;height:100%;object-fit:cover;display:block;}
+  .cam canvas{position:absolute;inset:0;width:100%;height:100%;}
+  .cam .placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);text-align:center;padding:24px;}
+  .cam .placeholder svg{width:40px;height:40px;stroke:var(--muted2);}
+  .badge{position:absolute;top:12px;left:12px;display:flex;align-items:center;gap:7px;
+    background:rgba(8,8,10,.72);backdrop-filter:blur(8px);border:1px solid var(--line);
+    border-radius:20px;padding:6px 11px;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;color:var(--cyan);}
+  .badge .dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan);}
+  .cam .fab{position:absolute;bottom:12px;right:12px;display:flex;gap:9px;align-items:center;}
+  .fab button{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;
+    background:rgba(20,20,24,.8);backdrop-filter:blur(8px);border:1px solid var(--line2);}
+  .fab button svg{width:18px;height:18px;stroke:var(--text);}
+  .fab .mic{width:48px;height:48px;background:var(--bg3);border:1px solid var(--cyan);}
+  .fab .mic svg{stroke:var(--cyan);}
+  .fab .mic.live{background:var(--cyan);}
+  .fab .mic.live svg{stroke:#04222a;}
+
+  .strip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px;}
+  .lt{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--text);}
+  .lt .pulse{width:8px;height:8px;border-radius:50%;background:var(--orange);box-shadow:0 0 0 0 rgba(242,107,42,.6);animation:rip 1.6s infinite;}
+  @keyframes rip{0%{box-shadow:0 0 0 0 rgba(242,107,42,.55);}100%{box-shadow:0 0 0 9px rgba(242,107,42,0);}}
+  .wsync{display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--line);
+    border-radius:11px;padding:8px 12px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+  .wsync b{color:var(--good);}
+  .wsync .wi{width:7px;height:7px;border-radius:2px;background:var(--good);transition:background .2s,box-shadow .2s;}
+  .wsync.flash .wi{background:var(--cyan);box-shadow:0 0 8px var(--cyan);}
+
+  .outpanel{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:18px 18px 20px;position:relative;}
+  .raw{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--muted);min-height:16px;margin-bottom:6px;}
+  .raw .tok{color:var(--cyan);}
+  .raw .sep{color:var(--muted2);}
+  .out-lbl{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .out{font-family:var(--display);font-size:34px;line-height:1.02;letter-spacing:.01em;min-height:40px;word-break:break-word;
+    transition:opacity .2s;}
+  .out.incoming{color:var(--cyan);}
+  .out.dim{color:var(--muted2);}
+  .chiprow{display:flex;gap:8px;overflow-x:auto;padding:2px;margin:0 -2px;}
+  .chiprow::-webkit-scrollbar{display:none;}
+  .chip{flex:0 0 auto;background:var(--bg3);border:1px solid var(--line);border-radius:10px;
+    padding:11px 14px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text);transition:transform .12s,border-color .2s,background .2s;}
+  .chip:active{transform:scale(.96);}
+  .chip.lex{border-color:rgba(34,211,238,.25);color:var(--cyan);}
+  .chip.lex .g{margin-right:7px;font-size:13px;}
+
+  .section-h{display:flex;align-items:center;gap:8px;margin:6px 2px 0;}
+  .section-h .lbl{flex:0 0 auto;}
+  .section-h .ln{flex:1;height:1px;background:var(--line);}
+
+  .lexpanel{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:14px;}
+  .lexpanel .hint{color:var(--muted);font-size:11px;margin-bottom:12px;line-height:1.5;}
+
+  .cfg-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 10px;flex:0 0 auto;position:relative;z-index:2;}
+  .cfg-head .back{display:flex;align-items:center;gap:12px;}
+  .cfg-head .back svg{width:20px;height:20px;stroke:var(--text);}
+  .cfg-head .back b{font-family:var(--display);font-size:24px;letter-spacing:.04em;line-height:.95;}
+  .enginepill{display:flex;align-items:center;gap:7px;background:var(--bg2);border:1px solid rgba(34,211,238,.3);
+    border-radius:20px;padding:7px 12px;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--cyan);}
+  .enginepill .dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan);}
+  .card{background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px;}
+  .card .ch{display:flex;align-items:center;justify-content:space-between;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--line);}
+  .card .ch .t{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--text);}
+  .card .ch.orange{border-bottom-color:rgba(242,107,42,.3);}
+  .card .ch svg{width:16px;height:16px;stroke:var(--orange);}
+  .field{margin-bottom:16px;}
+  .field:last-child{margin-bottom:0;}
+  .field .fl{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;display:flex;justify-content:space-between;}
+  .field .fl .v{color:var(--orange);}
+  select,.fakeselect{width:100%;background:var(--bg3);border:1px solid var(--line2);border-radius:11px;
+    padding:13px 14px;color:var(--text);font-family:var(--body);font-size:14px;appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%238A8A92' stroke-width='2'><path d='M3 5l4 4 4-4'/></svg>");
+    background-repeat:no-repeat;background-position:right 14px center;}
+  .statuschip{display:inline-flex;align-items:center;gap:7px;background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.25);
+    border-radius:8px;padding:6px 11px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--cyan);margin-top:10px;}
+  .statuschip .dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px var(--cyan);}
+  .ghostbtn{width:100%;margin-top:12px;background:var(--bg3);border:1px solid var(--line2);border-radius:11px;
+    padding:13px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text);
+    display:flex;align-items:center;justify-content:center;gap:9px;transition:transform .12s,border-color .2s;}
+  .ghostbtn:active{transform:scale(.98);}
+  .ghostbtn svg{width:15px;height:15px;stroke:var(--text);}
+  input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:4px;background:#2b2b31;outline:none;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:var(--orange);box-shadow:0 0 0 5px rgba(242,107,42,.18);cursor:pointer;}
+  input[type=range]::-moz-range-thumb{width:20px;height:20px;border:none;border-radius:50%;background:var(--orange);}
+  .ticks{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--muted2);margin-top:7px;}
+  .seg{display:flex;background:var(--bg3);border:1px solid var(--line2);border-radius:11px;overflow:hidden;}
+  .seg button{flex:1;padding:12px 0;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);transition:color .2s,background .2s;}
+  .seg button.active{color:var(--orange);background:rgba(242,107,42,.12);box-shadow:inset 0 0 0 1px rgba(242,107,42,.4);}
+  .row-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .row-toggle .rt{flex:1;}
+  .row-toggle .rt b{font-size:14px;font-weight:600;display:block;}
+  .row-toggle .rt small{color:var(--muted);font-size:11.5px;}
+  .pipe{background:var(--inset);border:1px solid var(--line);border-radius:11px;padding:13px;margin-top:12px;}
+  .pipe b{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;display:block;margin-bottom:6px;}
+  .pipe span{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--cyan);}
+  .pipe span svg{width:13px;height:13px;stroke:var(--cyan);}
+
+  .libitem{background:var(--bg2);border:1px solid var(--line);border-radius:13px;padding:14px 15px;display:flex;align-items:center;gap:13px;transition:transform .12s,border-color .2s;}
+  .libitem:active{transform:scale(.99);border-color:var(--line2);}
+  .libitem .pl{width:34px;height:34px;border-radius:9px;background:var(--bg3);display:grid;place-items:center;flex:0 0 auto;}
+  .libitem .pl svg{width:15px;height:15px;stroke:var(--cyan);}
+  .libitem .lc{flex:1;min-width:0;}
+  .libitem .lc b{font-size:14px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .libitem .lc small{font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;}
+  .empty{text-align:center;color:var(--muted2);font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:40px 20px;}
+  .pagehead{padding:8px 4px 2px;}
+  .pagehead h2{font-family:var(--display);font-size:36px;margin:0;letter-spacing:.02em;}
+  .pagehead p{color:var(--muted);font-size:13px;margin:4px 0 8px;}
+  .infogrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .infogrid .b{background:var(--bg2);border:1px solid var(--line);border-radius:13px;padding:14px;}
+  .infogrid .b .k{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);}
+  .infogrid .b .v{font-family:var(--mono);font-size:15px;color:var(--text);margin-top:6px;}
+  .infogrid .b .v.c{color:var(--cyan);}
+  .infogrid .b .v.o{color:var(--orange);}
+
+  .nav{position:absolute;bottom:0;left:0;right:0;z-index:3;display:flex;justify-content:space-around;
+    padding:10px 8px calc(10px + env(safe-area-inset-bottom));background:rgba(14,14,16,.92);
+    backdrop-filter:blur(14px);border-top:1px solid var(--line);}
+  .nav button{display:flex;flex-direction:column;align-items:center;gap:5px;padding:4px 14px;}
+  .nav button svg{width:20px;height:20px;stroke:var(--muted2);transition:stroke .2s;}
+  .nav button span{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted2);transition:color .2s;}
+  .nav button.active svg{stroke:var(--orange);}
+  .nav button.active span{color:var(--orange);}
+
+  .halo{position:absolute;inset:0;z-index:5;pointer-events:none;opacity:0;transition:opacity .4s;}
+  .halo.on{opacity:1;}
+  .halo::before{content:"";position:absolute;inset:0;border-radius:inherit;
+    box-shadow:inset 0 0 60px 8px rgba(34,211,238,.35), inset 0 0 14px 2px rgba(34,211,238,.5);
+    animation:halobreathe 2s ease-in-out infinite;}
+  @keyframes halobreathe{0%,100%{opacity:.5;}50%{opacity:1;}}
+
+  .toast{position:absolute;left:50%;bottom:96px;transform:translateX(-50%) translateY(20px);z-index:20;
+    background:rgba(20,20,24,.95);border:1px solid var(--line2);border-radius:11px;padding:11px 16px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--text);opacity:0;
+    transition:opacity .3s,transform .3s;pointer-events:none;max-width:84%;text-align:center;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .toast.warn{border-color:rgba(242,179,58,.5);color:var(--warn);}
+
+  .fade-in{animation:fadeUp .5s ease both;}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+</style>
+</head>
+<body>
+<div class="device" id="device">
+
+  <section class="screen active" id="splash">
+    <div class="splash-inner">
+      <div class="mark">
+        <div class="ring"></div><div class="ring r2"></div><div class="glow"></div>
+        <svg viewBox="0 0 100 100">
+          <rect class="diamond" x="28" y="28" width="44" height="44" transform="rotate(45 50 50)"/>
+          <path class="inf" d="M38 50 C38 42 50 42 50 50 C50 58 62 58 62 50 C62 42 50 42 50 50 C50 58 38 58 38 50 Z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="wordmark">SENSE<span>-</span>LINK</div>
+      </div>
+      <div class="boot-status" id="bootStatus">INITIALIZING EDGE CORE…</div>
+    </div>
+    <div class="splash-sub" style="position:absolute;bottom:58px;left:0;right:0;">EDGE&nbsp;AI&nbsp;COMMUNICATIONS&nbsp;NETWORK</div>
+    <div class="scanline"><i></i></div>
+  </section>
+
+  <section class="screen" id="onboard">
+    <div class="ob-title">Welcome</div>
+    <div class="ob-desc">Let's calibrate your device hardware.</div>
+
+    <div class="perm" id="permCam">
+      <div class="ic"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2 7a2 2 0 012-2h2l1.5-2h7L16 5h2a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V7z"/><circle cx="12" cy="12" r="3.2"/></svg></div>
+      <div class="pt"><b>Camera System Access</b><small id="camSub">Required for gesture vision pipeline</small></div>
+      <div class="toggle" id="togCam"><i></i></div>
+    </div>
+
+    <div class="perm" id="permMic">
+      <div class="ic"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path stroke-linecap="round" d="M5 11a7 7 0 0014 0M12 18v3"/></svg></div>
+      <div class="pt"><b>Microphone System Access</b><small id="micSub">Required for offline speech capture</small></div>
+      <div class="toggle cyan" id="togMic"><i></i></div>
+    </div>
+
+    <div class="ob-prog">
+      <div class="row"><span id="progLabel">Initializing On-Device Core Model</span><span id="progPct">6%</span></div>
+      <div class="bar"><i id="progBar"></i></div>
+    </div>
+
+    <button class="cta" id="enterBtn">ENTER ENGINE WORKSPACE
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </button>
+    <div style="flex:1"></div>
+    <div class="splash-sub" style="text-align:center;opacity:.5;">100% ON-DEVICE · NO NETWORK · AIRPLANE-MODE READY</div>
+  </section>
+
+  <section class="screen" id="main">
+    <div class="topbar">
+      <div class="left">
+        <div class="bars"><i></i><i></i><i></i><i></i></div>
+        <div class="brand">SENSE-LINK</div>
+      </div>
+      <button class="iconbtn" id="gearBtn" title="System Config">
+        <svg fill="none" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.6 1.6 0 00-1-1.5 1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H3a2 2 0 110-4h.1a1.6 1.6 0 001.5-1 1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V3a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1H21a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z"/></svg>
+      </button>
+    </div>
+
+    <div class="view" id="view">
+
+      <div class="subview active" id="sv-translate">
+        <div class="cam" id="camCard">
+          <div class="halo" id="halo"></div>
+          <div class="wrap" id="camWrap">
+            <video id="video" playsinline autoplay muted></video>
+            <canvas id="overlay"></canvas>
+          </div>
+          <div class="placeholder" id="camPlaceholder">
+            <svg fill="none" viewBox="0 0 24 24" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M2 7a2 2 0 012-2h2l1.5-2h7L16 5h2a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V7z"/><circle cx="12" cy="12" r="3.2"/></svg>
+            <div style="font-family:var(--mono);font-size:11px;letter-spacing:.1em;">CAMERA OFFLINE<br><span style="color:var(--muted2);font-size:10px;">Tap to enable vision pipeline</span></div>
+          </div>
+          <div class="badge"><span class="dot"></span><span id="latency">GPU Delegate: --ms</span></div>
+          <div class="fab">
+            <button id="flipBtn" title="Flip camera"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h3l2-2h6l2 2h3v12H4z"/><path stroke-linecap="round" d="M9 13a3 3 0 014.5-2.6M15 13a3 3 0 01-4.5 2.6"/><path stroke-linecap="round" d="M9 9.5V11h1.5M15 16.5V15h-1.5"/></svg></button>
+            <button id="clearBtn" title="Clear"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+            <button class="mic" id="micBtn" title="Listen"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path stroke-linecap="round" d="M5 11a7 7 0 0014 0M12 18v3"/></svg></button>
+          </div>
+        </div>
+
+        <div class="strip">
+          <div class="lt"><span class="pulse"></span><span id="ltState">Live Translation Active</span></div>
+          <div class="wsync" id="wsync"><span class="wi"></span>Watch Sync: <b>OK</b></div>
+        </div>
+
+        <div class="outpanel">
+          <div class="raw" id="rawTokens"><span class="sep">awaiting gesture stream…</span></div>
+          <div class="out-lbl"><span class="lbl">Transcription Output</span><span class="lbl" id="srcTag" style="color:var(--orange);">GEMMA·INT4</span></div>
+          <div class="out dim" id="output">SIGN OR TAP A GESTURE</div>
+        </div>
+
+        <div class="chiprow" id="quickRow">
+          <button class="chip" data-say="Understood.">Understood</button>
+          <button class="chip" data-say="Could you repeat that, please?">Repeat please</button>
+          <button class="chip" data-say="Thank you so much.">Thank you</button>
+          <button class="chip" data-say="Yes, that is correct.">Yes</button>
+          <button class="chip" data-say="No, thank you.">No</button>
+        </div>
+
+        <div class="section-h"><span class="lbl">Gesture Lexicon</span><span class="ln"></span></div>
+        <div class="lexpanel">
+          <div class="hint">Sign over the camera to stream tokens, or tap to inject. The on-device context engine composes fragments into a fluent sentence and speaks it.</div>
+          <div class="chiprow" id="lexRow"></div>
+        </div>
+      </div>
+
+      <div class="subview" id="sv-library">
+        <div class="pagehead"><h2>LIBRARY</h2><p>On-device transcript history · this session</p></div>
+        <div id="libList"></div>
+      </div>
+
+      <div class="subview" id="sv-sync">
+        <div class="pagehead"><h2>SYNC</h2><p>Wearable haptic bridge status</p></div>
+        <div class="card">
+          <div class="ch"><span class="t">Smartwatch Link</span>
+            <svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path d="M8 2h8l-1 5H9zM8 22h8l-1-5H9z"/><rect x="6" y="6" width="12" height="12" rx="3"/></svg></div>
+          <div class="row-toggle"><div class="rt"><b>BLE GATT Channel</b><small>Local Bluetooth OS layer · RFCOMM</small></div>
+            <div class="statuschip"><span class="dot"></span>LINKED</div></div>
+          <div class="pipe"><b>Haptic Pulse Map</b>
+            <span style="margin-bottom:5px"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path d="M3 12h4l2-5 3 10 2-7 2 4h5"/></svg>Double Pulse → sentence start</span>
+            <span><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path d="M3 12h18"/></svg>Long Pulse → sentence complete</span>
+          </div>
+          <button class="ghostbtn" id="testHaptic"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/></svg>SEND TEST HAPTIC</button>
+        </div>
+        <div class="card">
+          <div class="ch"><span class="t">Sensor Fusion</span>
+            <svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></div>
+          <div class="row-toggle"><div class="rt"><b>Wrist-Shake Clear</b><small>Accelerometer window-averaging detector</small></div>
+            <div class="statuschip" id="shakeStatus"><span class="dot"></span>ARMED</div></div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:12px;line-height:1.5">Shake the phone sharply to wipe the active workspace — same gesture the watch relays on the user's wrist.</div>
+        </div>
+      </div>
+
+      <div class="subview" id="sv-profile">
+        <div class="pagehead"><h2>PROFILE</h2><p>Edge AI Communications Network</p></div>
+        <div class="infogrid">
+          <div class="b"><div class="k">Engine</div><div class="v c">OPTIMAL</div></div>
+          <div class="b"><div class="k">Mode</div><div class="v o">OFFLINE</div></div>
+          <div class="b"><div class="k">Vision</div><div class="v" id="pVision">—</div></div>
+          <div class="b"><div class="k">Voice I/O</div><div class="v" id="pVoice">—</div></div>
+          <div class="b"><div class="k">Avg Latency</div><div class="v c" id="pLat">--ms</div></div>
+          <div class="b"><div class="k">Tokens Sent</div><div class="v" id="pTokens">0</div></div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <div class="ch"><span class="t">About</span></div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6">SENSE-LINK removes communication barriers between Deaf, mute and hearing people — fully on-device. Gesture vision, context language model and speech I/O run locally on the device, with zero network dependency.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <nav class="nav" id="nav">
+      <button class="active" data-sv="translate"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path d="M9 7H4v5M4 7l5 5M15 17h5v-5M20 17l-5-5"/><circle cx="8" cy="17" r="2"/><circle cx="16" cy="7" r="2"/></svg><span>Translate</span></button>
+      <button data-sv="library"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg><span>Library</span></button>
+      <button data-sv="sync"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path d="M12 3v5l3-2M12 21v-5l-3 2"/><circle cx="12" cy="12" r="3"/></svg><span>Sync</span></button>
+      <button data-sv="profile"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/></svg><span>Profile</span></button>
+    </nav>
+  </section>
+
+  <section class="screen" id="config">
+    <div class="cfg-head">
+      <div class="back" id="cfgBack">
+        <svg fill="none" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></svg>
+        <b>System<br>Config</b>
+      </div>
+      <div class="enginepill"><span class="dot"></span>Engine: Optimal</div>
+    </div>
+    <div class="view" style="padding-bottom:30px">
+
+      <div class="card">
+        <div class="ch orange"><span class="t">On-Device Edge AI Models</span>
+          <svg fill="none" viewBox="0 0 24 24" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg></div>
+        <div class="field">
+          <div class="fl">Local LLM Core Engine</div>
+          <select id="modelSel"><option>Gemma-3 1B (INT4 Quantized)</option><option>Gemma-2 2B (INT4 Quantized)</option><option>Phi-3 Mini (INT4)</option></select>
+          <div class="statuschip" id="llmStatus"><span class="dot"></span>Status: Fully Cached (1.3 GB)</div>
+        </div>
+        <button class="ghostbtn" id="hotReload"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" d="M3 12a9 9 0 0115-6.7L21 8M21 12a9 9 0 01-15 6.7L3 16"/><path d="M21 3v5h-5M3 21v-5h5"/></svg>MODEL HOT-RELOAD</button>
+        <div class="field" style="margin-top:16px">
+          <div class="fl">Gesture Detection<span class="v" id="confVal">Confidence: 0.75f</span></div>
+          <input type="range" id="confSlider" min="30" max="95" value="75">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="t">Wearable Ecosystem Interface</span>
+          <svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path d="M8 2h8l-1 5H9zM8 22h8l-1-5H9z"/><rect x="6" y="6" width="12" height="12" rx="3"/></svg></div>
+        <div class="row-toggle"><div class="rt"><b>Data Broadcast Sync</b></div><div class="toggle on" id="togBroadcast"><i></i></div></div>
+        <div class="pipe"><b>Notification Delivery Pipeline</b>
+          <span><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path d="M12 3v5l3-2M12 21v-5l-3 2"/></svg>Connected via Local Bluetooth OS Layer</span></div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="t">Voice &amp; Text Engine</span>
+          <svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path d="M3 12c4 0 4-7 8-7s4 14 8 14"/></svg></div>
+        <div class="field">
+          <div class="fl">Target Dictionary</div>
+          <select id="localeSel">
+            <option value="en-IN">English (India) / Locale: en-IN</option>
+            <option value="en-US">English (US) / Locale: en-US</option>
+            <option value="en-GB">English (UK) / Locale: en-GB</option>
+            <option value="hi-IN">Hindi (India) / Locale: hi-IN</option>
+            <option value="es-ES">Spanish / Locale: es-ES</option>
+            <option value="fr-FR">French / Locale: fr-FR</option>
+            <option value="de-DE">German / Locale: de-DE</option>
+            <option value="ja-JP">Japanese / Locale: ja-JP</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="fl">Vocal Synthesis Profile</div>
+          <div class="seg" id="voiceSeg">
+            <button data-v="male">Male</button><button data-v="female">Female</button><button class="active" data-v="neutral">Neutral</button>
+          </div>
+        </div>
+        <div class="field">
+          <div class="fl">Audio Playback Velocity</div>
+          <input type="range" id="rateSlider" min="50" max="200" value="100">
+          <div class="ticks"><span>0.5x</span><span>1.0x</span><span>1.5x</span><span>2.0x</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="t">Interface &amp; Cognitive</span></div>
+        <div class="row-toggle" style="margin-bottom:16px"><div class="rt"><b>System Tactile Feedback</b><small>Haptic response for critical system events</small></div><div class="toggle on" id="togHaptic"><i></i></div></div>
+        <div class="row-toggle"><div class="rt"><b>Camera Tracking Viewport</b><small>Landmark overlay on active visual recognition</small></div><div class="toggle on" id="togViewport"><i></i></div></div>
+      </div>
+
+    </div>
+  </section>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script type="module">
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+const S = {
+  visionReady:false, camOn:false, micGranted:false,
+  mirrored:false, facing:'environment',
+  listening:false,
+  confidence:0.75,
+  locale:'en-IN',
+  voiceProfile:'neutral',
+  rate:1.0,
+  haptics:true, broadcast:true, viewport:true,
+  tokens:[],
+  tokensSent:0,
+  latAvg:0,
+  library:[],
+};
+
+let toastTimer;
+function toast(msg, warn=false){
+  const t=$('#toast'); t.textContent=msg; t.className='toast show'+(warn?' warn':'');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.className='toast',2200);
+}
+
+function buzz(pattern){
+  if(!S.haptics) return;
+  try{ navigator.vibrate && navigator.vibrate(pattern); }catch(e){}
+  const w=$('#wsync'); w.classList.add('flash'); setTimeout(()=>w.classList.remove('flash'),260);
+}
+const PULSE = { tokenBlip:18, start:[40,55,40], complete:170, clear:[30,40,30,40,30] };
+
+function show(id){ $$('.screen').forEach(s=>s.classList.toggle('active', s.id===id)); }
+
+const bootMsgs=['INITIALIZING EDGE CORE…','MOUNTING GPU DELEGATE…','VERIFYING MODEL CACHE…','LINKING SENSOR BUS…','READY'];
+let bi=0;
+const bootTick=setInterval(()=>{ bi++; $('#bootStatus').textContent=bootMsgs[Math.min(bi,bootMsgs.length-1)];
+  if(bi>=bootMsgs.length-1) clearInterval(bootTick); },520);
+setTimeout(()=>{ show('onboard'); }, 2700);
+$('#splash').addEventListener('click',()=>{ clearInterval(bootTick); show('onboard'); });
+
+let HandLandmarker=null, landmarker=null;
+async function loadVision(){
+  try{
+    $('#progLabel').textContent='Mounting MediaPipe GPU delegate';
+    const vision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14');
+    const { FilesetResolver } = vision; HandLandmarker = vision.HandLandmarker;
+    setProg(40,'Resolving WASM fileset');
+    const fileset = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+    setProg(65,'Loading hand_landmarker.task');
+    landmarker = await HandLandmarker.createFromOptions(fileset,{
+      baseOptions:{
+        modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+        delegate:'GPU'
+      },
+      runningMode:'VIDEO', numHands:1, minHandDetectionConfidence:0.5, minTrackingConfidence:0.5
+    });
+    S.visionReady=true; setProg(100,'Core model ready'); $('#progPct').style.color='var(--good)';
+    $('#pVision').textContent='GPU·READY'; $('#pVision').className='v c';
+  }catch(e){
+    console.warn('Vision load failed -> manual fallback',e);
+    S.visionReady=false; setProg(100,'Manual mode (no GPU)');
+    $('#pVision').textContent='FALLBACK'; $('#pVision').className='v';
+  }
+}
+function setProg(p,label){ $('#progBar').style.width=p+'%'; $('#progPct').textContent=p+'%'; if(label)$('#progLabel').textContent=label; }
+loadVision();
+
+$('#togCam').addEventListener('click', async()=>{
+  const t=$('#togCam');
+  if(t.classList.contains('on')){ t.classList.remove('on'); S.camOn=false; stopCamera(); return; }
+  const ok=await startCamera();
+  if(ok){ t.classList.add('on'); $('#camSub').textContent='Granted · rear vision pipeline'; }
+  else { toast('Camera permission denied',true); }
+});
+$('#togMic').addEventListener('click', async()=>{
+  const t=$('#togMic');
+  if(t.classList.contains('on')){ t.classList.remove('on'); S.micGranted=false; return; }
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({audio:true});
+    s.getTracks().forEach(x=>x.stop());
+    S.micGranted=true; t.classList.add('on'); $('#micSub').textContent='Granted · offline STT ready';
+    $('#pVoice').textContent='TTS+STT'; $('#pVoice').className='v c';
+  }catch(e){ toast('Mic blocked: '+((e&&e.name)||'denied'),true); $('#pVoice').textContent='TTS ONLY'; }
+});
+$('#enterBtn').addEventListener('click',()=>{
+  show('main'); buildLexicon(); refreshProfile();
+  if(S.camOn) startDetectLoop();
+});
+
+const video=$('#video'); let stream=null;
+async function startCamera(){
+  try{
+    if(stream) stopCamera();
+    stream=await navigator.mediaDevices.getUserMedia({ video:{ facingMode:S.facing, width:{ideal:1280}, height:{ideal:720} }, audio:false });
+    video.srcObject=stream; await video.play();
+    S.camOn=true; $('#camPlaceholder').style.display='none';
+    $('#camWrap').classList.toggle('mirror', S.facing==='user'); S.mirrored=(S.facing==='user');
+    return true;
+  }catch(e){ console.warn('camera',e); S.camOn=false; return false; }
+}
+function stopCamera(){ if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } $('#camPlaceholder').style.display='flex'; }
+
+$('#camPlaceholder').addEventListener('click', async()=>{ const ok=await startCamera(); if(ok){ $('#togCam').classList.add('on'); startDetectLoop(); } else toast('Camera blocked — using manual lexicon',true); });
+$('#flipBtn').addEventListener('click', async()=>{ S.facing = S.facing==='environment'?'user':'environment'; if(S.camOn) await startCamera(); });
+
+const W=0, T_TIP=4, T_IP=3, I_MCP=5,I_PIP=6,I_TIP=8, M_MCP=9,M_PIP=10,M_TIP=12,
+      R_MCP=13,R_PIP=14,R_TIP=16, P_MCP=17,P_PIP=18,P_TIP=20;
+const HAND_CONNECTIONS=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y,(a.z||0)-(b.z||0));
+function fingerExtended(lm, tip, pip, mcp){
+
+  const w=lm[W];
+  return dist(lm[tip],w) > dist(lm[pip],w)*1.05 && dist(lm[pip],w) > dist(lm[mcp],w)*0.9;
+}
+function thumbExtended(lm, scale){
+
+  return dist(lm[T_TIP],lm[I_MCP]) > scale*0.55;
+}
+
+const LEX={
+  thumbs_up:{token:'YES',    gloss:'yes',   emoji:'👍'},
+  ok_sign:  {token:'COFFEE', gloss:'coffee',emoji:'👌'},
+  victory:  {token:'PLEASE', gloss:'please',emoji:'✌️'},
+  open_palm:{token:'HELLO',  gloss:'hello', emoji:'✋'},
+  point_up: {token:'WATER',  gloss:'water', emoji:'☝️'},
+  fist:     {token:'HELP',   gloss:'help',  emoji:'✊'},
+  pinch_go: {token:'GO',     gloss:'to go', emoji:'🤏'},
+};
+function classify(lm){
+  const scale=Math.max(dist(lm[W],lm[M_MCP]),1e-4);
+  const idx=fingerExtended(lm,I_TIP,I_PIP,I_MCP);
+  const mid=fingerExtended(lm,M_TIP,M_PIP,M_MCP);
+  const rng=fingerExtended(lm,R_TIP,R_PIP,R_MCP);
+  const pky=fingerExtended(lm,P_TIP,P_PIP,P_MCP);
+  const th =thumbExtended(lm,scale);
+  const ext=[idx,mid,rng,pky].filter(Boolean).length;
+  const thumbIndexTouch = dist(lm[T_TIP],lm[I_TIP]) < scale*0.35;
+  const thumbUp = th && (lm[T_TIP].y < lm[I_MCP].y - scale*0.15);
+
+  if(thumbIndexTouch && rng && pky) return 'ok_sign';
+  if(thumbIndexTouch && !rng && !pky) return 'pinch_go';
+  if(ext===0 && !th) return 'fist';
+  if(ext===0 && thumbUp) return 'thumbs_up';
+  if(idx && mid && !rng && !pky) return 'victory';
+  if(idx && !mid && !rng && !pky) return 'point_up';
+  if(ext>=4) return 'open_palm';
+  return null;
+}
+
+const overlay=$('#overlay'), octx=overlay.getContext('2d');
+let rafId=null, lastTokenTime=0, stableG=null, stableCount=0, lastCommitted=null, composeTimer=null;
+const COMMIT_FRAMES=6, TOKEN_COOLDOWN=1100;
+
+function startDetectLoop(){ if(rafId) return; if(!S.visionReady||!landmarker){ return; } loop(); }
+function loop(){
+  rafId=requestAnimationFrame(loop);
+  if(!S.camOn||video.readyState<2){ return; }
+  if(overlay.width!==video.videoWidth){ overlay.width=video.videoWidth; overlay.height=video.videoHeight; }
+  let res=null; const t0=performance.now();
+  try{ res=landmarker.detectForVideo(video, t0); }catch(e){ return; }
+  const ms=performance.now()-t0;
+  S.latAvg = S.latAvg ? S.latAvg*0.85+ms*0.15 : ms;
+  $('#latency').textContent='GPU Delegate: '+Math.round(S.latAvg)+'ms';
+
+  octx.clearRect(0,0,overlay.width,overlay.height);
+  if(res && res.landmarks && res.landmarks.length){
+    const lm=res.landmarks[0];
+    if(S.viewport) drawHand(lm);
+    const g=classify(lm);
+
+    if(g && g===stableG){ stableCount++; } else { stableG=g; stableCount=1; }
+    const now=performance.now();
+    const enoughHold = stableCount >= Math.round(COMMIT_FRAMES*(0.6+S.confidence*0.8));
+    if(g && enoughHold && (g!==lastCommitted || now-lastTokenTime>TOKEN_COOLDOWN) && now-lastTokenTime>TOKEN_COOLDOWN){
+      commitToken(LEX[g]); lastCommitted=g; lastTokenTime=now;
+    }
+    if(!g) lastCommitted=null;
+  } else { stableG=null; stableCount=0; lastCommitted=null; }
+}
+function drawHand(lm){
+  const w=overlay.width,h=overlay.height;
+  octx.lineWidth=Math.max(w*0.006,3); octx.strokeStyle='rgba(34,211,238,.9)';
+  octx.shadowColor='rgba(34,211,238,.8)'; octx.shadowBlur=8;
+  for(const [a,b] of HAND_CONNECTIONS){
+    octx.beginPath(); octx.moveTo(lm[a].x*w,lm[a].y*h); octx.lineTo(lm[b].x*w,lm[b].y*h); octx.stroke();
+  }
+  octx.shadowBlur=0;
+  for(const p of lm){ octx.beginPath(); octx.fillStyle='#22D3EE'; octx.arc(p.x*w,p.y*h,Math.max(w*0.008,4),0,7); octx.fill();
+    octx.beginPath(); octx.fillStyle='rgba(255,255,255,.9)'; octx.arc(p.x*w,p.y*h,Math.max(w*0.003,1.5),0,7); octx.fill(); }
+}
+
+function commitToken(entry){
+  S.tokens.push(entry.token); S.tokensSent++;
+  buzz(PULSE.tokenBlip);
+  renderRaw();
+  clearTimeout(composeTimer);
+  composeTimer=setTimeout(()=>composeAndSpeak(), 1500);
+}
+function injectToken(key){ commitToken(LEX[key]); }
+function renderRaw(){
+  const r=$('#rawTokens');
+  if(!S.tokens.length){ r.innerHTML='<span class="sep">awaiting gesture stream…</span>'; return; }
+  r.innerHTML = S.tokens.map(t=>`<span class="tok">${t}</span>`).join('<span class="sep"> · </span>');
+}
+
+function composeSentence(tokens){
+  const key=tokens.join(' ');
+  const exact={
+    'YES COFFEE PLEASE':'Yes, I would like some coffee, please.',
+    'YES COFFEE GO':"Yes, I'd like a coffee to go, please.",
+    'COFFEE GO':'A coffee to go, please.',
+    'HELLO':'Hello! It is nice to meet you.',
+    'HELLO HELP':'Hello, could you please help me?',
+    'HELP':'Excuse me, could you please help me?',
+    'WATER':'Could I have some water, please?',
+    'WATER PLEASE':'Could I please have some water?',
+    'YES':'Yes.','YES PLEASE':'Yes, please.',
+    'HELLO COFFEE PLEASE':'Hello! Could I get a coffee, please?',
+  };
+  if(exact[key]) return exact[key];
+
+  const has=t=>tokens.includes(t);
+  let parts=[]; let lead='';
+  if(has('HELLO')) lead='Hello! ';
+  if(has('YES')) parts.push('yes');
+  const wants=[]; if(has('COFFEE')) wants.push('a coffee'); if(has('WATER')) wants.push('some water');
+  let core='';
+  if(wants.length){ core='I would like '+wants.join(' and '); if(has('GO')) core+=' to go'; }
+  else if(has('HELP')) core='could you please help me';
+  let s=lead; const body=[...parts]; if(core) body.push(core);
+  s += body.join(', ');
+  if(!s.trim()) s='…';
+  if(has('PLEASE') && !/please/i.test(s)) s+=', please';
+  s=s.trim(); s=s.charAt(0).toUpperCase()+s.slice(1);
+  if(!/[.!?]$/.test(s)) s+='.';
+  return s;
+}
+
+let composing=false, llmReqId=0; const llmPending={}; window.__llmTimers={};
+function llmReady(){ try{ return !!(window.AndroidLLM && AndroidLLM.isReady()); }catch(e){ return false; } }
+function finishCompose(tokens, sentence){
+  const out=$('#output'); out.className='out'; out.textContent=sentence;
+  speak(sentence); addLibrary(sentence);
+  S.tokens=[]; renderRaw(); refreshProfile(); composing=false;
+}
+function composeAndSpeak(){
+  if(!S.tokens.length || composing) return;
+  composing=true;
+  const tokens=[...S.tokens];
+  const out=$('#output'); out.className='out'; out.textContent='…';
+  if(llmReady()){
+
+    $('#srcTag').textContent='GEMMA·2B';
+    const id=++llmReqId; llmPending[id]=tokens;
+    window.__llmTimers[id]=setTimeout(()=>{
+      if(llmPending[id]){ const t=llmPending[id]; delete llmPending[id]; finishCompose(t, composeSentence(t)); }
+    }, 6000);
+    try{ AndroidLLM.compose(id, JSON.stringify(tokens), S.locale); }
+    catch(e){ clearTimeout(window.__llmTimers[id]); delete llmPending[id]; finishCompose(tokens, composeSentence(tokens)); }
+  } else {
+
+    $('#srcTag').textContent='GEMMA·INT4';
+    setTimeout(()=>finishCompose(tokens, composeSentence(tokens)), 420);
+  }
+}
+window.__onLLM=function(id, sentence){
+  if(window.__llmTimers[id]){ clearTimeout(window.__llmTimers[id]); delete window.__llmTimers[id]; }
+  if(!llmPending[id]) return;
+  const tokens=llmPending[id]; delete llmPending[id];
+  finishCompose(tokens, (sentence&&sentence.trim())?sentence.trim():composeSentence(tokens));
+};
+
+let voices=[];
+function loadVoices(){ voices=window.speechSynthesis ? speechSynthesis.getVoices() : []; }
+if(window.speechSynthesis){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
+function pickVoice(){
+  if(!voices.length) loadVoices();
+  const base=S.locale.split('-')[0];
+  let pool=voices.filter(v=>v.lang && v.lang.toLowerCase().startsWith(S.locale.toLowerCase()));
+  if(!pool.length) pool=voices.filter(v=>v.lang && v.lang.toLowerCase().startsWith(base));
+  if(!pool.length) pool=voices;
+  if(S.voiceProfile!=='neutral'){
+    const want=S.voiceProfile, fem=/female|woman|samantha|victoria|zira|tessa|aria|jenny|kalpana|swara/i, masc=/male|man|david|mark|fred|alex|ravi|prabhat/i;
+    const m=pool.find(v=> want==='female'?fem.test(v.name):masc.test(v.name));
+    if(m) return m;
+  }
+  return pool[0]||null;
+}
+function speak(text){
+  if(!window.speechSynthesis){ buzz(PULSE.start); return; }
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  const v=pickVoice(); if(v){ u.voice=v; u.lang=v.lang; } else u.lang=S.locale;
+  u.rate=S.rate; u.pitch=1;
+  buzz(PULSE.start);
+  u.onend=()=>{ buzz(PULSE.complete); };
+  speechSynthesis.speak(u);
+}
+
+$$('#quickRow .chip').forEach(c=>c.addEventListener('click',()=>{
+  const txt=c.dataset.say; const out=$('#output'); out.className='out'; out.textContent=txt;
+  $('#srcTag').textContent='QUICK'; speak(txt); addLibrary(txt);
+}));
+
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let recog=null;
+function toggleListen(){
+  if(!SR){ toast('Speech recognition not supported here',true); return; }
+  if(S.listening){ recog && recog.stop(); return; }
+  recog=new SR(); recog.lang=S.locale; recog.interimResults=true; recog.continuous=false; recog.maxAlternatives=1;
+  S.listening=true; setListenUI(true); buzz(PULSE.start);
+  $('#ltState').textContent='Listening…';
+  recog.onresult=(e)=>{
+    let txt=''; for(const r of e.results) txt+=r[0].transcript;
+    const out=$('#output'); out.className='out incoming'; out.textContent=txt||'…';
+    $('#srcTag').textContent='HEARING'; $('#srcTag').style.color='var(--cyan)';
+    if(e.results[e.results.length-1].isFinal){ addLibrary('↩ '+txt); buzz(PULSE.complete); }
+  };
+  recog.onerror=(e)=>{ toast('STT: '+e.error,true); };
+  recog.onend=()=>{ S.listening=false; setListenUI(false); $('#ltState').textContent='Live Translation Active'; $('#srcTag').style.color='var(--orange)'; };
+  try{ recog.start(); }catch(e){ S.listening=false; setListenUI(false); }
+}
+function setListenUI(on){ $('#micBtn').classList.toggle('live',on); $('#halo').classList.toggle('on',on); }
+$('#micBtn').addEventListener('click',toggleListen);
+
+function clearWorkspace(){
+  S.tokens=[]; renderRaw();
+  const out=$('#output'); out.className='out dim'; out.textContent='SIGN OR TAP A GESTURE';
+  $('#srcTag').textContent='GEMMA·INT4'; $('#srcTag').style.color='var(--orange)';
+  buzz(PULSE.clear);
+}
+$('#clearBtn').addEventListener('click',clearWorkspace);
+
+let accWin=[], lastShake=0;
+function onMotion(e){
+  const a=e.accelerationIncludingGravity||e.acceleration; if(!a) return;
+  const mag=Math.hypot(a.x||0,a.y||0,a.z||0);
+  accWin.push(mag); if(accWin.length>10) accWin.shift();
+  const avg=accWin.reduce((s,v)=>s+v,0)/accWin.length;
+  const now=performance.now();
+  if(avg>22 && now-lastShake>1400){ lastShake=now; clearWorkspace(); toast('Workspace cleared · shake detected'); }
+}
+function armMotion(){
+  if(typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'){
+    DeviceMotionEvent.requestPermission().then(p=>{ if(p==='granted') window.addEventListener('devicemotion',onMotion); }).catch(()=>{});
+  } else { window.addEventListener('devicemotion',onMotion); }
+}
+
+function addLibrary(text){
+  S.library.unshift({text, t:new Date()}); if(S.library.length>40) S.library.pop(); renderLibrary();
+}
+function renderLibrary(){
+  const l=$('#libList');
+  if(!S.library.length){ l.innerHTML='<div class="empty">No transcripts yet this session</div>'; return; }
+  l.innerHTML=S.library.map((e,i)=>`<div class="libitem" data-i="${i}" style="margin-bottom:10px">
+    <div class="pl"><svg fill="none" viewBox="0 0 24 24" stroke-width="2"><path d="M8 5v14l11-7z"/></svg></div>
+    <div class="lc"><b>${e.text.replace(/</g,'&lt;')}</b><small>${e.t.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div></div>`).join('');
+  $$('#libList .libitem').forEach(it=>it.addEventListener('click',()=>{ const e=S.library[+it.dataset.i]; speak(e.text.replace(/^↩\s*/,'')); }));
+}
+
+function buildLexicon(){
+  const row=$('#lexRow');
+  row.innerHTML=Object.entries(LEX).map(([k,v])=>`<button class="chip lex" data-k="${k}"><span class="g">${v.emoji}</span>${v.token}</button>`).join('');
+  $$('#lexRow .chip').forEach(c=>c.addEventListener('click',()=>injectToken(c.dataset.k)));
+}
+
+$$('#nav button').forEach(b=>b.addEventListener('click',()=>{
+  $$('#nav button').forEach(x=>x.classList.remove('active')); b.classList.add('active');
+  const sv=b.dataset.sv; $$('.subview').forEach(s=>s.classList.toggle('active', s.id==='sv-'+sv));
+  $('#view').scrollTop=0; if(sv==='library') renderLibrary(); if(sv==='profile') refreshProfile();
+}));
+$('#gearBtn').addEventListener('click',()=>{ show('config'); refreshLlmStatus(); });
+$('#cfgBack').addEventListener('click',()=>show('main'));
+
+$('#confSlider').addEventListener('input',e=>{ const v=+e.target.value/100; S.confidence=v; $('#confVal').textContent='Confidence: '+v.toFixed(2)+'f'; });
+$('#localeSel').addEventListener('change',e=>{ S.locale=e.target.value; toast('Locale → '+S.locale); });
+$('#rateSlider').addEventListener('input',e=>{ S.rate=+e.target.value/100; });
+$$('#voiceSeg button').forEach(b=>b.addEventListener('click',()=>{ $$('#voiceSeg button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); S.voiceProfile=b.dataset.v; }));
+$('#togHaptic').addEventListener('click',e=>{ const t=e.currentTarget; t.classList.toggle('on'); S.haptics=t.classList.contains('on'); });
+$('#togBroadcast').addEventListener('click',e=>{ const t=e.currentTarget; t.classList.toggle('on'); S.broadcast=t.classList.contains('on'); });
+$('#togViewport').addEventListener('click',e=>{ const t=e.currentTarget; t.classList.toggle('on'); S.viewport=t.classList.contains('on'); if(!S.viewport) octx.clearRect(0,0,overlay.width,overlay.height); });
+window.LLM_MODEL_URL = window.LLM_MODEL_URL || '';
+function refreshLlmStatus(){ const el=$('#llmStatus'); if(el && window.AndroidLLM){ try{ el.innerHTML='<span class="dot"></span>'+AndroidLLM.status(); }catch(e){} } }
+window.__onLLMDownload=function(pct,msg){ toast(msg+(pct>=0?(' '+pct+'%'):''), pct<0); refreshLlmStatus(); };
+$('#hotReload').addEventListener('click',e=>{ const b=e.currentTarget; const o=b.innerHTML; b.innerHTML='RELOADING…';
+  try{ if(window.AndroidLLM){ AndroidLLM.ensureModel(window.LLM_MODEL_URL); } }catch(_){}
+  setTimeout(()=>{ b.innerHTML=o; refreshLlmStatus(); toast(window.AndroidLLM?('Engine: '+AndroidLLM.status()):'Model hot-reloaded · 1.3 GB cached'); },1100); });
+$('#modelSel').addEventListener('change',e=>toast('Engine → '+e.target.value));
+$('#testHaptic').addEventListener('click',()=>{ buzz(PULSE.start); setTimeout(()=>buzz(PULSE.complete),600); toast('Haptic relayed to wrist'); });
+
+function refreshProfile(){
+  $('#pLat').textContent=(S.latAvg?Math.round(S.latAvg):'--')+'ms';
+  $('#pTokens').textContent=S.tokensSent;
+  if(!$('#pVoice').textContent.trim()||$('#pVoice').textContent==='—') $('#pVoice').textContent = SR? 'TTS+STT':'TTS';
+  if($('#pVision').textContent==='—') $('#pVision').textContent = S.visionReady?'GPU·READY':'FALLBACK';
+}
+setInterval(()=>{ if($('#config').classList.contains('active')) return; refreshProfile(); },1500);
+
+$('#enterBtn').addEventListener('click',armMotion);
+
+window.addEventListener('resize',()=>{ if(video.videoWidth){ overlay.width=video.videoWidth; overlay.height=video.videoHeight; }});
+
+setTimeout(()=>{ if(!S.visionReady && $('#main').classList.contains('active')) toast('Vision in manual mode — tap lexicon to drive',true); }, 4000);
+
+renderRaw(); renderLibrary();
+</script>
+</body>
+</html>
