@@ -1,276 +1,400 @@
 # SENSE-LINK — Technical Documentation
 
-## 1. Abstract
-
-SENSE-LINK is an offline, on-device communication aid that bridges signed and spoken language in
-both directions. A signer signs to the front or rear camera; the device tracks the hands, classifies
-gestures into semantic tokens, rewrites those tokens into a fluent sentence with an on-device
-language model, and speaks the sentence aloud. A hearing person's spoken reply is transcribed to
-text and accompanied by a haptic cue. The complete pipeline — vision, language and speech — executes
-locally; no audio, video or text leaves the device, and the application functions in airplane mode.
-
-This document describes the system architecture, the end-to-end data flow, the on-device and offline
-design, the permission and security model, performance characteristics, and the engineering
-decisions behind them.
+Engineering reference for the SENSE-LINK Android application: a fully on-device, offline
+sign-to-speech and speech-to-text system. This document covers the architecture, component
+specifications, the JavaScript–native interface, the on-device language-model runtime, the offline
+asset model, build and deployment, and the configurable parameters.
 
 ---
 
-## 2. Problem statement
+## 1. System overview
 
-People who rely on sign language face a persistent communication gap with people who do not sign.
-Existing mobile tools address it poorly:
+SENSE-LINK is a single-activity Android application (Kotlin + Jetpack Compose) that hosts a web-based
+processing pipeline inside a hardware-accelerated `WebView` and augments it with native capabilities
+through a JavaScript bridge. All processing — hand tracking, gesture classification, sentence
+composition, speech synthesis and recognition — executes locally on the device. No network connection
+is required at runtime; all web assets, model runtimes and fonts are bundled and served from an
+in-application origin.
 
-- **Grammar mismatch.** Sign languages are spatial and use topic-comment structure; they do not map
-  word-for-word onto spoken language. Tools that translate sign tokens literally produce telegraphic,
-  undignified output (for example "water give need" instead of "Could I have some water, please?").
-- **Connectivity dependence.** Most translation and transcription tools offload computation to a
-  server. They become unusable in exactly the environments where they are most needed: underground
-  transit, basements, clinics, and dense crowds where bandwidth collapses.
-- **Thermal and power cost.** Running continuous computer vision while keeping a cellular radio active
-  heats the device and exhausts the battery quickly, which makes sustained use impractical.
-
-The design brief was therefore: produce dignified, full-sentence output; run with zero network
-dependency; and keep the computational footprint low enough for sustained handheld use.
-
----
-
-## 3. Goals and non-goals
-
-**Goals**
-- Two-way communication: sign → speech, and speech → text.
-- 100% on-device execution, including the language model.
-- Graceful degradation: the app must never hard-fail during live use.
-- A native, installable Android application.
-
-**Non-goals (this iteration)**
-- Full continuous sign-language translation across an unrestricted vocabulary. The current system
-  recognises a curated gesture lexicon and composes from it.
-- Cloud-assisted recognition or model hosting of any kind.
+| Property | Value |
+|----------|-------|
+| Application ID | `com.kraftshala.senselink` |
+| Version | 1.0 (versionCode 1) |
+| minSdk / targetSdk / compileSdk | 26 / 34 / 34 |
+| Orientation | Portrait (locked) |
+| Network at runtime | None required (optional one-time model download only) |
 
 ---
 
-## 4. System overview
+## 2. Architecture
 
 ```
-            ┌──────────────────────────── Android application (Kotlin / Compose) ───────────────────────────┐
-            │                                                                                                │
-  Camera ───┼─▶ WebView (hardware-accelerated)                                                               │
-   Mic  ────┼─▶   • assets served from https://appassets.androidplatform.net (in-app secure origin)         │
- Sensors ───┼─▶   • runtime permission broker (camera / mic)                                                 │
-            │                                                                                                │
-            │   ┌──────────────── Pipeline (runs inside the WebView) ─────────────────┐                     │
-            │   │  MediaPipe Hand Landmarker (GPU)  →  21 landmarks                    │                     │
-            │   │           │                                                          │                     │
-            │   │           ▼                                                          │                     │
-            │   │  Geometric gesture classifier    →  semantic tokens                 │                     │
-            │   │           │                                                          │                     │
-            │   │           ▼                                                          │   AndroidLLM bridge │
-            │   │  Context composer ───────────────────────────────────────────────────▶ Gemma-2B (LiteRT) │
-            │   │           │           (rule-based fallback if model absent/slow)     │   on-device         │
-            │   │           ▼                                                          │                     │
-            │   │  Text-to-speech  →  spoken sentence   +   haptic pulse               │                     │
-            │   │  Speech-to-text  ←  hearing person's reply                           │                     │
-            │   └──────────────────────────────────────────────────────────────────────┘                   │
-            └────────────────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────── Android application (Kotlin / Jetpack Compose) ───────────┐
+│  MainActivity  →  Compose host  →  WebView (hardware accelerated)          │
+│                                                                            │
+│   WebViewAssetLoader   --serves-->  assets/www  (secure in-app origin)     │
+│   Permission broker    --grants-->  CAMERA / RECORD_AUDIO                  │
+│                                                                            │
+│   ┌── Pipeline (runs inside the WebView) ────────────┐                     │
+│   │ camera → MediaPipe Hand Landmarker (GPU)          │                     │
+│   │        → 21 landmarks → gesture classifier        │  AndroidLLM bridge  │
+│   │        → tokens → composer ───────────────────────┼─▶ Gemma-2B (LiteRT) │
+│   │        → sentence → TextToSpeech + haptics        │  on-device          │
+│   │ microphone → SpeechRecognition → text             │                     │
+│   └───────────────────────────────────────────────────┘                    │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Every box runs locally. The only process boundary inside the device is the JavaScript ↔ Kotlin
-bridge between the in-WebView pipeline and the native language-model runtime.
+The application is layered as: (a) a native shell that manages the window, the WebView, asset serving
+and permissions; (b) a web pipeline that performs vision, classification, composition and speech; and
+(c) a native model runtime reached over a JavaScript bridge. The only in-device process boundary is
+that bridge.
 
 ---
 
-## 5. Components
+## 3. Technology stack and dependencies
 
-### 5.1 Application shell
+| Layer | Technology | Version |
+|-------|------------|---------|
+| Language / UI | Kotlin, Jetpack Compose | 1.9.24 / BOM 2024.06.00 |
+| Activity integration | `androidx.activity:activity-compose` | 1.9.0 |
+| Core | `androidx.core:core-ktx` | 1.13.1 |
+| WebView asset serving | `androidx.webkit:webkit` | 1.11.0 |
+| On-device LLM | `com.google.mediapipe:tasks-genai` (LiteRT) | 0.10.14 |
+| Hand tracking | MediaPipe Tasks Vision (WebAssembly) | 0.10.14 |
+| Build | Gradle / Android Gradle Plugin | 8.10.2 / 8.5.2 |
+| Compose compiler extension | — | 1.5.14 |
+| Build JDK | JDK | 17+ |
 
-The app is a single-activity Jetpack Compose application. The activity hosts a `WebView` through an
-`AndroidView` interop node. Two design choices make the embedded web pipeline behave like native code:
-
-- **Secure in-app asset origin.** Rather than loading from `file://` (which blocks ES modules,
-  WebAssembly streaming and secure-context APIs such as `getUserMedia`), assets are served through a
-  `WebViewAssetLoader` mapped to `https://appassets.androidplatform.net/assets/`. A custom path
-  handler returns each asset with the correct `Content-Type` — notably `text/javascript` for `.mjs`
-  and `application/wasm` for `.wasm`, which the default handler mislabels and which would otherwise
-  silently break module loading and the vision runtime.
-- **Robust media permissions.** When the page calls `getUserMedia`, the WebView raises a permission
-  request. The shell only grants it after confirming the corresponding OS permission is actually
-  held; if it is not, the shell requests it on demand and grants the web-layer request once the user
-  approves. The activity is resolved by unwrapping the Compose context chain, so the broker is always
-  reachable regardless of how the host context is wrapped.
-
-The activity keeps the screen awake during use, pauses and resumes the WebView with the lifecycle to
-release the camera when backgrounded, and locks to portrait.
-
-### 5.2 Vision pipeline
-
-Hand tracking uses MediaPipe Hand Landmarker in video mode on the GPU delegate, configured for a
-single hand. Each processed frame yields 21 three-dimensional landmarks. The detector is driven from
-a `requestAnimationFrame` loop; per-frame inference latency is measured with an exponential moving
-average and surfaced live in the interface. The landmark skeleton is drawn as an overlay so the user
-gets immediate feedback that tracking is active.
-
-### 5.3 Gesture classifier
-
-Classification is purely geometric and therefore deterministic and inexpensive. From the 21 landmarks
-the classifier computes:
-
-- **Finger extension**, by comparing each fingertip's distance from the wrist against the distances
-  of the intermediate (PIP) and base (MCP) joints.
-- **Thumb extension**, from the lateral distance between the thumb tip and the index base.
-- **Pinch / contact**, from the thumb-tip to index-tip distance, normalised by hand scale.
-
-These features map to a curated lexicon of seven gestures (open palm → HELLO, fist → HELP, point up →
-WATER, victory → PLEASE, thumbs up → YES, OK sign → COFFEE, pinch → GO). To avoid jitter, a gesture
-must be held for a number of consecutive frames before it commits, and a cooldown prevents the same
-token from repeating on every frame. The hold threshold scales with a user-adjustable confidence
-setting.
-
-### 5.4 Context / language layer
-
-Committed tokens accumulate in a buffer. After a brief pause the buffer is composed into a sentence by
-one of two engines:
-
-- **On-device LLM (primary).** Gemma-2B (4-bit) runs through LiteRT via the MediaPipe LLM Inference
-  runtime, behind a native bridge exposed to the page as `AndroidLLM`. The page sends the token list
-  and target locale; the bridge runs inference on a background thread with a low-temperature,
-  instruction-style prompt that asks for a single natural, polite sentence, and returns the result
-  through a callback. Model weights live in the app's storage and are loaded once at startup.
-- **Deterministic composer (fallback).** A rule-based composer maps common token combinations to
-  polished phrases and otherwise assembles a grammatical sentence from token glosses. It requires no
-  model and runs instantly.
-
-Selection is automatic: if the model is loaded the LLM path is used; otherwise the composer runs. A
-watchdog timer guarantees that a sentence is produced even if inference stalls, so the user-facing
-behaviour is bounded regardless of device speed. The interface labels which engine produced each
-sentence.
-
-### 5.5 Speech output and input
-
-Speech output uses the platform speech-synthesis engine. Voice selection follows the configured
-locale and an optional voice-profile preference, and playback rate is adjustable. Each spoken
-sentence is paired with haptic pulses marking start and completion.
-
-Speech input (the reverse, hearing-to-signer loop) uses the platform speech-recognition API to
-transcribe a reply to on-screen text with a haptic acknowledgement. (A native recognizer bridge with
-an offline language pack is the planned replacement for environments where the embedded recognizer is
-unavailable; see §11.)
-
-### 5.6 Haptics and sensor fusion
-
-Haptic feedback uses the device vibrator with distinct patterns for token capture, sentence start and
-sentence completion. A shake-to-clear gesture is implemented with a window-averaging accelerometer
-detector: the magnitude of recent acceleration samples is averaged over a sliding window, and a sharp
-shake above threshold (rate-limited by a cooldown) clears the active workspace.
+Java/Kotlin compile target is JVM 17.
 
 ---
 
-## 6. End-to-end data flow
+## 4. Application shell
 
-A representative interaction, "OK sign" followed by "victory":
+### 4.1 Activity and Compose host
 
-1. The camera frame is delivered to MediaPipe, which returns 21 landmarks (single-digit to low tens
-   of milliseconds on the GPU delegate).
-2. The classifier reads the landmarks as an OK sign and, after the hold threshold, commits the token
-   `COFFEE`. A token-capture haptic fires.
-3. A second gesture commits `PLEASE`.
-4. After a short pause the buffer `[COFFEE, PLEASE]` is sent to the language layer.
-5. The on-device model returns "Could I have a coffee, please?" (or the deterministic composer
-   produces an equivalent sentence if no model is present).
-6. The sentence is displayed, spoken aloud, paired with start/complete haptics, and logged to the
-   on-device session history.
+`MainActivity` extends `ComponentActivity`. In `onCreate` it sets `FLAG_KEEP_SCREEN_ON`, requests the
+required runtime permissions, enables WebView remote debugging, and calls `setContent` with a
+composable that hosts the WebView through an `AndroidView` interop node. The activity is locked to
+portrait and declares `configChanges` for orientation, screen size, keyboard and UI mode so it is not
+recreated on configuration changes (which would tear down the camera session).
 
-The reverse direction: the hearing person's reply is transcribed and shown as incoming text with a
-haptic cue. A sharp shake clears the workspace for the next exchange.
+### 4.2 WebView configuration
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| `javaScriptEnabled` | true | Pipeline is JavaScript. |
+| `domStorageEnabled` | true | Session state. |
+| `mediaPlaybackRequiresUserGesture` | false | Camera stream autoplay. |
+| `allowFileAccess` | false | Assets are served via the loader, not `file://`. |
+| `allowContentAccess` | false | No content-provider surface. |
+| Background colour | `#0E0E10` | Avoids flashes before first paint. |
+
+### 4.3 Local asset serving
+
+Assets are served through `WebViewAssetLoader` mapped to the default reserved origin
+`https://appassets.androidplatform.net/assets/`. The page is loaded from
+`https://appassets.androidplatform.net/assets/www/index.html`.
+
+A custom `WebViewAssetLoader.PathHandler` returns each asset with an explicit `Content-Type`. This is
+required because the default handler mislabels module and WebAssembly files, which breaks ES-module
+import and WebAssembly instantiation. The handler also sets `Access-Control-Allow-Origin: *`.
+
+| Extension | Content-Type |
+|-----------|--------------|
+| `.js`, `.mjs` | `text/javascript` |
+| `.wasm` | `application/wasm` |
+| `.html` | `text/html` |
+| `.css` | `text/css` |
+| `.json` | `application/json` |
+| `.woff2` / `.woff` / `.ttf` | `font/woff2` / `font/woff` / `font/ttf` |
+| `.task`, `.bin`, `.data` | `application/octet-stream` |
+| other | `application/octet-stream` |
+
+Text types are returned with UTF-8 encoding. Asset requests are intercepted in
+`WebViewClient.shouldInterceptRequest`.
+
+### 4.4 Runtime permission broker
+
+Media permissions are handled in two places:
+
+1. **Up front.** `onCreate` requests any missing `CAMERA` / `RECORD_AUDIO` permissions via an
+   `ActivityResultContracts.RequestMultiplePermissions` launcher.
+2. **On demand.** When the page calls `getUserMedia`, the WebView raises
+   `WebChromeClient.onPermissionRequest`. The broker maps each requested web resource
+   (`RESOURCE_VIDEO_CAPTURE` → `CAMERA`, `RESOURCE_AUDIO_CAPTURE` → `RECORD_AUDIO`) to its OS
+   permission. If all required OS permissions are held, the request is granted immediately; otherwise
+   the missing permissions are requested and the web request is granted from the result callback once
+   the user approves.
+
+The host activity is resolved by unwrapping the Compose `Context` chain (`ContextWrapper.baseContext`)
+so the broker is reachable regardless of how the host context is wrapped. If no activity is found, the
+handler falls back to granting the requested resources directly.
+
+### 4.5 Lifecycle
+
+`onPause` and `onResume` are forwarded to the WebView so the camera and microphone are released when
+the app is backgrounded and re-acquired when foregrounded. `onDestroy` closes the model runtime and
+destroys the WebView.
 
 ---
 
-## 7. Offline and on-device design
+## 5. Vision subsystem
 
-The application carries every runtime dependency inside the APK so that it works with no network:
+Hand tracking uses the MediaPipe Hand Landmarker task running on the GPU delegate. Inference is driven
+from a `requestAnimationFrame` loop calling `detectForVideo`. Each processed frame yields 21
+three-dimensional landmarks, which are drawn as an overlay. Per-frame latency is tracked with an
+exponential moving average (`latAvg = latAvg*0.85 + ms*0.15`) and displayed live.
 
-- The MediaPipe vision runtime (ES-module bundle plus the SIMD and non-SIMD WebAssembly binaries).
+| Parameter | Value |
+|-----------|-------|
+| Task | Hand Landmarker (float16) |
+| Delegate | GPU |
+| Running mode | VIDEO |
+| Max hands | 1 |
+| Min hand-detection confidence | 0.5 |
+| Min tracking confidence | 0.5 |
+
+---
+
+## 6. Gesture classification
+
+Classification is geometric and stateless per frame. From the 21 landmarks it derives finger
+extension (fingertip-to-wrist distance compared against the PIP and MCP joints), thumb extension
+(lateral thumb-tip to index-base distance), and pinch/contact (thumb-tip to index-tip distance,
+normalised by hand scale). The derived flags map to a fixed lexicon.
+
+| Gesture | Token | Gloss |
+|---------|-------|-------|
+| Open palm | `HELLO` | hello |
+| Fist | `HELP` | help |
+| Point up | `WATER` | water |
+| Victory | `PLEASE` | please |
+| Thumbs up | `YES` | yes |
+| OK sign | `COFFEE` | coffee |
+| Pinch | `GO` | to go |
+
+A gesture must be held for a number of consecutive frames before it commits. The hold count scales
+with the confidence setting: `requiredFrames = round(COMMIT_FRAMES * (0.6 + confidence * 0.8))`. A
+cooldown prevents the same token repeating on consecutive frames.
+
+| Parameter | Default |
+|-----------|---------|
+| `COMMIT_FRAMES` | 6 |
+| `TOKEN_COOLDOWN` | 1100 ms |
+| Confidence (slider 0.30–0.95) | 0.75 |
+| Pinch/contact threshold | 0.35 × hand scale |
+| Thumb-extension threshold | 0.55 × hand scale |
+
+Every gesture is also exposed as a tappable control, so the identical token path can be driven by
+touch when the camera is unavailable.
+
+---
+
+## 7. Sentence composition
+
+Committed tokens accumulate in a buffer. After an idle interval (1500 ms) the buffer is composed into
+a sentence by one of two engines.
+
+### 7.1 On-device language model (primary)
+
+When a model is loaded, the buffer is sent to Gemma-2B (4-bit) through the `AndroidLLM` bridge (see
+§10). The bridge runs inference on a background thread with an instruction-style prompt that requests
+a single natural, polite sentence in the target locale, and returns the result asynchronously. The UI
+source tag reads `GEMMA·2B`.
+
+### 7.2 Deterministic composer (fallback)
+
+A rule-based composer maps common token combinations to fixed phrases and otherwise assembles a
+grammatical sentence from token glosses (lead word, requested items joined with conjunctions, polite
+suffix, capitalisation and terminal punctuation). It runs synchronously and requires no model. The UI
+source tag reads `GEMMA·INT4`.
+
+### 7.3 Selection and watchdog
+
+The LLM path is used when `AndroidLLM.isReady()` returns true; otherwise the deterministic composer
+runs. A 6000 ms watchdog falls back to the deterministic composer if the model does not return in
+time, bounding the user-visible latency. The fallback path also applies a short presentation delay
+(420 ms) before revealing the sentence.
+
+---
+
+## 8. Speech I/O
+
+**Output** uses the Web Speech synthesis API. A voice is selected by matching the configured locale,
+then an optional voice-profile preference (male / female / neutral) by name pattern. Playback rate is
+configurable (0.5×–2.0×). Each utterance is paired with start and completion haptics.
+
+**Input** uses the Web Speech recognition API (`interimResults` on, `continuous` off, language set to
+the configured locale). Final transcripts are displayed as incoming text with a haptic
+acknowledgement. (A native `SpeechRecognizer` bridge with an offline language pack is planned for
+runtimes where the embedded recognizer is unavailable.)
+
+---
+
+## 9. Haptics and sensor fusion
+
+Haptic feedback uses `navigator.vibrate` with distinct patterns.
+
+| Event | Pattern (ms) |
+|-------|--------------|
+| Token captured | `18` |
+| Sentence start | `[40, 55, 40]` |
+| Sentence complete | `170` |
+| Workspace cleared | `[30, 40, 30, 40, 30]` |
+
+Shake-to-clear uses a window-averaging accelerometer detector: the acceleration magnitude is averaged
+over a sliding window of 10 samples; an average above 22 (rate-limited by a 1400 ms cooldown) clears
+the workspace.
+
+---
+
+## 10. JavaScript–native bridge API
+
+The native object is injected as `window.AndroidLLM`. Methods annotated with `@JavascriptInterface`:
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `isReady()` | boolean | True when a model is loaded and ready. |
+| `status()` | string | Human-readable engine state. |
+| `modelPath()` | string | Absolute path the runtime resolves for the model file. |
+| `compose(id, tokensJson, locale)` | void | Runs inference for a token array; result delivered asynchronously. |
+| `ensureModel(url)` | void | Loads the model if present, otherwise downloads it from `url`. |
+
+Results are delivered back to the page through callbacks the page defines:
+
+| Callback | Signature | Description |
+|----------|-----------|-------------|
+| `window.__onLLM` | `(id, sentence)` | Composition result for request `id`; empty string signals fallback. |
+| `window.__onLLMDownload` | `(percent, message)` | Download progress; `percent = -1` signals an error. |
+
+Callbacks are invoked on the UI thread via `WebView.evaluateJavascript`; strings are JSON-quoted.
+
+---
+
+## 11. On-device LLM runtime
+
+**Model file resolution.** The runtime first checks the application's external files directory
+(`getExternalFilesDir(null)/gemma.task`), then the private storage directory
+(`filesDir/llm/gemma.task`). A file smaller than 1 MB is treated as absent.
+
+**Initialisation.** On startup, if a model file is present, the runtime builds
+`LlmInference.LlmInferenceOptions` (`setModelPath`, `setMaxTokens(512)`) and creates the
+`LlmInference` engine on a single-thread background executor. Status transitions through
+`MODEL NOT INSTALLED` → `LOADING GEMMA…` → `GEMMA 2B · ON-DEVICE`, or `LOAD FAILED` on error.
+
+**Inference.** `compose` joins the token array into a space-separated string, wraps it in the model's
+instruction template, calls `generateResponse`, and returns the first non-empty line (quotes
+stripped). Failures return an empty string, which triggers the deterministic fallback on the page.
+
+**Provisioning.** The ~1.3 GB model is not shipped in the APK. It is provided either by side-loading
+into the external files directory, or by `ensureModel(url)`, which streams the file to private storage
+with progress reporting (64 KB buffer; 30 s connect / 60 s read timeouts; written to a `.part` file
+and atomically renamed on success), then initialises the engine.
+
+---
+
+## 12. Offline asset bundling
+
+`android/tools/fetch-assets.mjs` produces the offline bundle under
+`android/app/src/main/assets/www/`:
+
+- MediaPipe Tasks Vision ES-module bundle and the SIMD and non-SIMD WebAssembly runtimes.
 - The hand-landmark model.
-- The web fonts (self-hosted; no font CDN at runtime).
-- The web application itself.
+- The web fonts (self-hosted `.woff2` plus a generated stylesheet).
 
-A small reproducible Node script (`android/tools/fetch-assets.mjs`) fetches these artifacts and
-rewrites the web application's external references to local paths, so the offline bundle can be
-regenerated deterministically. At runtime everything is served from the in-app secure origin
-described in §5.1. The language model is the one large artifact provisioned out of band (side-loaded
-or downloaded once on first run) to keep the installable package small.
-
-The result is verifiable: with the device in airplane mode, hand tracking, sentence composition,
-speech output and haptics all continue to function.
+The script downloads each artifact and rewrites the web application's external references to local
+paths, so the bundle is reproducible. A `--html-only` mode re-applies the reference rewrites without
+re-downloading. At runtime every asset is served from the in-app origin (§4.3).
 
 ---
 
-## 8. Permission and security model
+## 13. Control and data flow
 
-- The app declares only the permissions it uses: `CAMERA`, `RECORD_AUDIO`, `VIBRATE`, and `INTERNET`
-  (the last solely for the optional one-time model download).
-- Runtime permissions are requested up front and, as a safety net, on demand at the moment the web
-  layer needs them, so a previously skipped grant can still be recovered without leaving the app.
+1. A camera frame is processed by MediaPipe, producing 21 landmarks.
+2. The classifier derives a gesture; after the hold threshold a token is committed and a token haptic
+   fires.
+3. Additional gestures extend the token buffer.
+4. After the idle interval the buffer is composed (LLM if ready, otherwise deterministic).
+5. The sentence is displayed, synthesised to speech, paired with start/complete haptics, and appended
+   to the on-device session history.
+6. In the reverse direction, a recognised speech transcript is displayed as incoming text with a
+   haptic cue.
+7. A shake clears the workspace.
+
+---
+
+## 14. Permissions and security
+
+- Declared permissions: `CAMERA`, `RECORD_AUDIO`, `VIBRATE`, and `INTERNET` (the last only for the
+  optional one-time model download).
 - The WebView loads only first-party content from the in-app origin; file-system and content-provider
-  access are disabled, and there is no remote content surface.
-- The single JavaScript bridge exposes a minimal, explicit method surface (model readiness, status,
-  compose, provisioning) and carries no arbitrary command channel.
+  access are disabled and there is no remote content surface.
+- The injected bridge exposes a fixed, explicit method set and carries no general command channel.
+- Permissions are requested up front and recoverable on demand (§4.4).
 
 ---
 
-## 9. Performance characteristics
+## 15. Performance characteristics
 
-- **Vision.** Hand-landmark inference runs on the GPU delegate; measured per-frame latency is shown
-  live in the UI and typically sits in the low tens of milliseconds, leaving headroom for a smooth
-  frame loop.
-- **Classification.** Pure arithmetic over 21 points; negligible cost.
-- **Language.** The deterministic composer is effectively instantaneous. On-device LLM latency varies
-  with hardware; the watchdog bounds the user-visible wait and the fallback covers slower devices.
-- **Thermal/power.** Because there is no continuous network transfer and computation is GPU-delegated,
-  sustained use stays within a practical thermal envelope — the core motivation for the on-device
-  design.
+- **Vision.** GPU-delegated hand-landmark inference; measured per-frame latency is shown live and
+  typically sits in the low tens of milliseconds.
+- **Classification.** Constant-time arithmetic over 21 points; negligible.
+- **Composition.** Deterministic path is effectively instantaneous; on-device LLM latency is device
+  dependent and bounded by the 6000 ms watchdog.
+- **Resource profile.** No continuous network transfer; computation is GPU-delegated, keeping the
+  sustained thermal and power envelope low.
 
 ---
 
-## 10. Technology stack
+## 16. Build and deployment
 
-| Layer | Technology |
-|-------|------------|
-| App shell | Kotlin, Jetpack Compose, Android `WebView`, `WebViewAssetLoader` |
-| Vision | MediaPipe Hand Landmarker (GPU delegate), WebAssembly |
-| Language | Gemma-2B (4-bit) via LiteRT / MediaPipe LLM Inference; rule-based fallback |
-| Speech | Platform text-to-speech and speech recognition |
-| Sensors | Vibrator (haptics), accelerometer (shake detection) |
-| Build | Gradle 8.10.2, Android Gradle Plugin 8.5.2, Kotlin 1.9.24, Compose BOM 2024.06.00 |
-| Targets | minSdk 26, compileSdk/targetSdk 34 |
+```bash
+cd android
+node tools/fetch-assets.mjs            # build the offline asset bundle (fresh checkout / after web edits)
+./gradlew :app:assembleDebug           # Windows: .\gradlew.bat :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
 
----
+The output APK is `android/app/build/outputs/apk/debug/app-debug.apk`. A prebuilt debug APK is also
+provided under `releases/`. Camera and microphone are granted on first launch.
 
-## 11. Reliability and graceful degradation
+| Component | Version |
+|-----------|---------|
+| Gradle | 8.10.2 |
+| Android Gradle Plugin | 8.5.2 |
+| Kotlin | 1.9.24 |
+| Compose BOM | 2024.06.00 |
+| Compose compiler extension | 1.5.14 |
+| compileSdk / targetSdk / minSdk | 34 / 34 / 26 |
+| Build JDK | 17+ |
 
-The system is designed so that no single failure stops a live conversation:
-
-- If the camera or vision runtime is unavailable, every gesture is also a tappable control, so the
-  same pipeline can be driven by touch.
-- If the language model is absent or slow, the deterministic composer runs and a watchdog guarantees
-  output.
-- If a permission is denied, the app remains usable in its touch-driven mode and the permission can be
-  recovered on demand.
-
----
-
-## 12. Limitations and future work
-
-- **Vocabulary.** Recognition covers a curated lexicon, not unrestricted continuous signing.
-  Expanding the vocabulary and adding per-user personalisation is the largest area of future work.
-- **Reverse transcription.** The embedded speech-recognition API is not available in every runtime
-  environment; a native recognizer bridge with an offline language pack is planned.
-- **Wearable relay.** A planned feature identifies a paired smartwatch over BLE (via the standard
-  Device Information Service) and uses the on-device model to generate the appropriate notification
-  payload, delivering the finalized sentence and its haptic cues to any standards-compliant wearable.
+The SDK location is supplied through `local.properties` (`sdk.dir`) or the `ANDROID_HOME`/
+`ANDROID_SDK_ROOT` environment variables. Release builds reference `proguard-android-optimize.txt`
+plus `proguard-rules.pro`, which keeps `@JavascriptInterface` members.
 
 ---
 
-## 13. Project structure
+## 17. Configurable parameters
+
+| Parameter | Location | Default |
+|-----------|----------|---------|
+| Gesture confidence | UI slider | 0.75 (0.30–0.95) |
+| `COMMIT_FRAMES` | gesture loop | 6 |
+| `TOKEN_COOLDOWN` | gesture loop | 1100 ms |
+| Compose idle delay | composer | 1500 ms |
+| LLM watchdog | composer | 6000 ms |
+| Shake window / threshold / cooldown | sensor detector | 10 samples / 22 / 1400 ms |
+| Locale | UI | `en-IN` (8 locales) |
+| Voice profile | UI | neutral (male / female / neutral) |
+| Playback rate | UI | 1.0× (0.5×–2.0×) |
+| `setMaxTokens` | LLM runtime | 512 |
+| `LLM_MODEL_URL` | web config | empty (set to enable download) |
+
+---
+
+## 18. Project structure
 
 ```
 index.html                         Web application (UI + pipeline)
@@ -279,26 +403,12 @@ android/
     AndroidManifest.xml
     java/com/kraftshala/senselink/
       MainActivity.kt              Compose host, WebView, asset serving, permission broker
-      LlmBridge.kt                 On-device Gemma-2B bridge (load / compose / provision)
+      LlmBridge.kt                 On-device Gemma-2B runtime and bridge
     assets/www/                    Offline bundle (web app, MediaPipe, model runtime, fonts)
     res/                           Theme, colours, launcher icon
-  tools/fetch-assets.mjs           Reproducible offline-asset bundler
+  tools/fetch-assets.mjs           Offline-asset bundler
 docs/
   TECHNICAL_DOCUMENTATION.md       This document
   THEME.md                         Visual design system
 releases/                          Prebuilt debug APK
 ```
-
----
-
-## 14. Build and run
-
-```bash
-cd android
-node tools/fetch-assets.mjs        # bundle offline assets (fresh checkout / after editing the web app)
-./gradlew :app:assembleDebug       # -> app/build/outputs/apk/debug/app-debug.apk
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
-
-Grant camera and microphone on first launch. To provision the on-device model, side-load the weights
-into the app's external files directory or configure a download URL (see the project README).
